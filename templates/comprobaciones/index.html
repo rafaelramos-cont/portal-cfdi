@@ -1,0 +1,99 @@
+{% extends 'base.html' %}
+{% block title %}Comprobaciones{% endblock %}
+{% block page_title %}<i class="bi bi-receipt-cutoff me-1"></i> Comprobaciones de Gastos{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('comprobaciones_nueva') }}" class="btn btn-sm btn-success">
+  <i class="bi bi-plus-lg"></i> Nueva Comprobación
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="mb-3 d-flex flex-wrap gap-2">
+  <a href="{{ url_for('comprobaciones_index') }}"
+     class="btn btn-sm {% if not filtro_estado %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+    Todas
+  </a>
+  {% for est, col in [('pendiente','warning'),('aprobada_supervisor','info'),
+                      ('aprobada','success'),('rechazada','danger')] %}
+  <a href="{{ url_for('comprobaciones_index') }}?estado={{ est }}"
+     class="btn btn-sm {% if filtro_estado==est %}btn-{{col}}{% else %}btn-outline-{{col}}{% endif %}">
+    {{ est.replace('_',' ').title() }}
+  </a>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Folio</th>
+          <th>Fecha</th>
+          <th>Tipo</th>
+          <th>Emisor</th>
+          <th>Concepto</th>
+          <th class="text-end">Total</th>
+          <th>SAT</th>
+          <th>Duplicado</th>
+          <th>Estado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in comprobaciones %}
+        <tr class="{% if c.cfdi_duplicado %}table-danger{% endif %}">
+          <td><code>{{ c.folio }}</code></td>
+          <td>{{ c.fecha | fmtdate }}</td>
+          <td>
+            <span class="badge bg-light text-dark border">
+              {{ c.tipo.replace('_',' ') }}
+            </span>
+          </td>
+          <td>
+            <div>{{ c.nombre_emisor or '—' }}</div>
+            <small class="text-muted">{{ c.rfc_emisor or '' }}</small>
+          </td>
+          <td class="text-truncate" style="max-width:140px">{{ c.concepto or '—' }}</td>
+          <td class="text-end fw-semibold">{{ c.total | mxn }}</td>
+          <td>
+            <span class="{{ 'sat-vigente' if c.estado_sat=='Vigente'
+                          else 'sat-cancelado' if c.estado_sat=='Cancelado'
+                          else 'sat-sinverificar' }}">
+              {{ c.estado_sat or '—' }}
+            </span>
+          </td>
+          <td>
+            {% if c.cfdi_duplicado %}
+              <span class="badge bg-danger">
+                <i class="bi bi-exclamation-triangle"></i> SÍ
+              </span>
+            {% else %}
+              <span class="text-success"><i class="bi bi-check"></i></span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="badge bg-{{ ESTADO_BADGE.get(c.estado,'secondary') }} badge-estado">
+              {{ c.estado.replace('_',' ') }}
+            </span>
+          </td>
+          <td>
+            <a href="{{ url_for('comprobaciones_detalle', id=c.id) }}"
+               class="btn btn-sm btn-outline-secondary">
+              <i class="bi bi-eye"></i>
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="10" class="text-center text-muted py-4">
+            No hay comprobaciones registradas.
+            <a href="{{ url_for('comprobaciones_nueva') }}">Subir la primera</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

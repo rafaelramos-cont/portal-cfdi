@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block title %}Proveedores{% endblock %}
+{% block page_title %}<i class="bi bi-building me-1"></i> Catálogo de Proveedores{% endblock %}
+
+{% block topbar_actions %}
+{% if current_user.puede('gestionar_proveedores') %}
+<a href="{{ url_for('proveedores_nuevo') }}" class="btn btn-sm btn-secondary">
+  <i class="bi bi-building-add"></i> Agregar Proveedor
+</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-body pb-0">
+    <input type="text" id="buscar" class="form-control mb-3"
+           placeholder="🔍  Buscar por nombre o RFC..." onkeyup="filtrar()">
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0" id="tablaProveedores">
+      <thead class="table-light">
+        <tr>
+          <th>Nombre / Razón Social</th>
+          <th>RFC</th>
+          <th>Banco</th>
+          <th>CLABE</th>
+          <th>Email</th>
+          <th>Estado</th>
+          {% if current_user.puede('gestionar_proveedores') %}
+          <th></th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in proveedores %}
+        <tr class="{{ '' if p.activo else 'text-muted' }}">
+          <td class="fw-semibold">{{ p.nombre }}</td>
+          <td><code>{{ p.rfc }}</code></td>
+          <td>{{ p.banco or '—' }}</td>
+          <td>
+            <span class="font-monospace small">{{ p.clabe or '—' }}</span>
+          </td>
+          <td>{{ p.email or '—' }}</td>
+          <td>
+            <span class="badge bg-{{ 'success' if p.activo else 'secondary' }}">
+              {{ 'Activo' if p.activo else 'Inactivo' }}
+            </span>
+          </td>
+          {% if current_user.puede('gestionar_proveedores') %}
+          <td>
+            <a href="{{ url_for('proveedores_editar', id=p.id) }}"
+               class="btn btn-sm btn-outline-secondary">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-4">
+            No hay proveedores registrados.
+            {% if current_user.puede('gestionar_proveedores') %}
+            <a href="{{ url_for('proveedores_nuevo') }}">Agregar el primero</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filtrar() {
+  const q = document.getElementById('buscar').value.toLowerCase();
+  document.querySelectorAll('#tablaProveedores tbody tr').forEach(row => {
+    row.style.display = row.innerText.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

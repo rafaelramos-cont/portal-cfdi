@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% block title %}Solicitudes de Pago{% endblock %}
+{% block page_title %}<i class="bi bi-send-check me-1"></i> Solicitudes de Pago{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('pagos_nueva') }}" class="btn btn-sm btn-primary">
+  <i class="bi bi-plus-lg"></i> Nueva Solicitud de Pago
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="mb-3 d-flex flex-wrap gap-2">
+  <a href="{{ url_for('pagos_index') }}"
+     class="btn btn-sm {% if not filtro_estado %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+    Todas
+  </a>
+  {% for est, col in [('pendiente','warning'),('aprobada_supervisor','info'),
+                      ('autorizado_pago','success'),('rechazada','danger')] %}
+  <a href="{{ url_for('pagos_index') }}?estado={{ est }}"
+     class="btn btn-sm {% if filtro_estado==est %}btn-{{col}}{% else %}btn-outline-{{col}}{% endif %}">
+    {{ est.replace('_',' ').title() }}
+  </a>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Folio</th>
+          <th>Fecha</th>
+          <th>Proveedor / Emisor</th>
+          <th>Concepto</th>
+          <th class="text-end">Total</th>
+          <th>SAT</th>
+          <th>Duplicado</th>
+          <th>Estado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sp in solicitudes %}
+        <tr class="{% if sp.cfdi_duplicado %}table-danger{% elif sp.estado_sat=='Cancelado' %}table-warning{% endif %}">
+          <td><code>{{ sp.folio }}</code></td>
+          <td>{{ sp.fecha | fmtdate }}</td>
+          <td>
+            <div>{{ sp.nombre_emisor or '—' }}</div>
+            <small class="text-muted">{{ sp.rfc_emisor or '' }}</small>
+          </td>
+          <td class="text-truncate" style="max-width:150px">{{ sp.concepto or '—' }}</td>
+          <td class="text-end fw-semibold">{{ sp.total | mxn }}</td>
+          <td>
+            <span class="{{ 'sat-vigente' if sp.estado_sat=='Vigente'
+                          else 'sat-cancelado' if sp.estado_sat=='Cancelado'
+                          else 'sat-error' if 'Error' in (sp.estado_sat or '')
+                          else 'sat-sinverificar' }}">
+              {{ sp.estado_sat or '—' }}
+            </span>
+          </td>
+          <td>
+            {% if sp.cfdi_duplicado %}
+              <span class="badge bg-danger"><i class="bi bi-exclamation-triangle"></i> SÍ</span>
+            {% else %}
+              <span class="text-success"><i class="bi bi-check"></i></span>
+            {% endif %}
+          </td>
+          <td>
+            <span class="badge bg-{{ ESTADO_BADGE.get(sp.estado,'secondary') }} badge-estado">
+              {{ sp.estado.replace('_',' ') }}
+            </span>
+          </td>
+          <td>
+            <a href="{{ url_for('pagos_detalle', id=sp.id) }}"
+               class="btn btn-sm btn-outline-secondary">
+              <i class="bi bi-eye"></i>
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="9" class="text-center text-muted py-4">
+            No hay solicitudes de pago.
+            <a href="{{ url_for('pagos_nueva') }}">Crear la primera</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

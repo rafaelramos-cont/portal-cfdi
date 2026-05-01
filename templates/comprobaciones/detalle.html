@@ -1,0 +1,191 @@
+{% extends 'base.html' %}
+{% block title %}{{ comp.folio }}{% endblock %}
+{% block page_title %}Comprobación {{ comp.folio }}{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('comprobaciones_index') }}" class="btn btn-sm btn-outline-secondary">
+  <i class="bi bi-arrow-left"></i> Volver
+</a>
+{% endblock %}
+
+{% block content %}
+{% if comp.cfdi_duplicado %}
+<div class="alert alert-danger d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-exclamation-triangle-fill fs-4"></i>
+  <div>
+    <strong>⚠️ CFDI DUPLICADO:</strong> Este UUID ya fue registrado
+    anteriormente en el sistema. La comprobación no puede aprobarse sin revisión.
+  </div>
+</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Datos del Comprobante</span>
+        <span class="badge bg-{{ ESTADO_BADGE.get(comp.estado,'secondary') }} fs-6">
+          {{ comp.estado.replace('_',' ').title() }}
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="text-muted small">Folio</label>
+            <div class="fw-bold font-monospace">{{ comp.folio }}</div>
+          </div>
+          <div class="col-md-4">
+            <label class="text-muted small">Tipo</label>
+            <div>
+              <span class="badge bg-secondary">
+                {{ comp.tipo.replace('_',' ').title() }}
+              </span>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <label class="text-muted small">Registrado por</label>
+            <div>{{ comp.solicitante.nombre }}</div>
+          </div>
+
+          <div class="col-12">
+            <label class="text-muted small">UUID / Folio Fiscal</label>
+            <div class="font-monospace fw-bold" style="word-break:break-all">
+              {{ comp.cfdi_uuid or '—' }}
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <label class="text-muted small">Emisor</label>
+            <div>{{ comp.nombre_emisor or '—' }}</div>
+            <small class="text-muted">RFC: {{ comp.rfc_emisor or '—' }}</small>
+          </div>
+          <div class="col-md-6">
+            <label class="text-muted small">Receptor RFC</label>
+            <div class="text-muted">{{ comp.rfc_receptor or '—' }}</div>
+          </div>
+
+          <div class="col-md-3">
+            <label class="text-muted small">Subtotal</label>
+            <div>{{ comp.subtotal | mxn }}</div>
+          </div>
+          <div class="col-md-3">
+            <label class="text-muted small">IVA</label>
+            <div>{{ comp.iva | mxn }}</div>
+          </div>
+          <div class="col-md-3">
+            <label class="text-muted small">Total</label>
+            <div class="fw-bold fs-5 text-success">{{ comp.total | mxn }}</div>
+          </div>
+          <div class="col-md-3">
+            <label class="text-muted small">Fecha CFDI</label>
+            <div>{{ comp.fecha_cfdi | fmtdate }}</div>
+          </div>
+
+          <div class="col-12">
+            <label class="text-muted small">Concepto</label>
+            <div class="border rounded p-2 bg-light">{{ comp.concepto or '—' }}</div>
+          </div>
+
+          {% if comp.notas %}
+          <div class="col-12">
+            <label class="text-muted small">Notas</label>
+            <div class="border rounded p-2 bg-light">{{ comp.notas }}</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Verificación SAT -->
+    <div class="card mb-3">
+      <div class="card-header">Verificación SAT</div>
+      <div class="card-body d-flex align-items-center gap-3">
+        <div class="fs-3
+          {{ 'text-success' if comp.estado_sat=='Vigente'
+             else 'text-danger' if comp.estado_sat in ['Cancelado','No encontrado']
+             else 'text-secondary' }}">
+          <i class="bi bi-{{ 'check-circle-fill' if comp.estado_sat=='Vigente'
+                              else 'x-circle-fill' if comp.estado_sat=='Cancelado'
+                              else 'question-circle-fill' }}"></i>
+        </div>
+        <div>
+          <div class="fw-bold">Estado SAT: {{ comp.estado_sat or 'Sin verificar' }}</div>
+          <small class="text-muted">Verificado al registrar la comprobación.</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Historial -->
+    {% if comp.autorizaciones %}
+    <div class="card">
+      <div class="card-header">Historial de Autorizaciones</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr><th>Fecha</th><th>Autorizador</th><th>Rol</th>
+                <th>Decisión</th><th>Comentario</th></tr>
+          </thead>
+          <tbody>
+            {% for a in comp.autorizaciones %}
+            <tr>
+              <td>{{ a.fecha | fmtdate }}</td>
+              <td>{{ a.autorizador.nombre }}</td>
+              <td><span class="badge bg-secondary">{{ a.autorizador.rol }}</span></td>
+              <td>
+                <span class="badge bg-{{ 'success' if a.decision=='aprobado' else 'danger' }}">
+                  {{ a.decision }}
+                </span>
+              </td>
+              <td>{{ a.comentario or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Panel autorización -->
+  {% if current_user.puede('autorizar_comprobacion') and
+       comp.estado in ['pendiente', 'aprobada_supervisor'] %}
+  <div class="col-lg-4">
+    <div class="card border-success">
+      <div class="card-header bg-success text-white">
+        <i class="bi bi-shield-check"></i> Revisión de Comprobación
+      </div>
+      <div class="card-body">
+        {% if comp.cfdi_duplicado %}
+        <div class="alert alert-danger py-2 small">
+          <strong>UUID duplicado.</strong>
+          Solo aprueba si fue revisado y justificado.
+        </div>
+        {% endif %}
+        <form method="post"
+              action="{{ url_for('comprobaciones_autorizar', id=comp.id) }}">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Comentario</label>
+            <textarea name="comentario" class="form-control" rows="3"
+                      placeholder="Observaciones de la revisión..."></textarea>
+          </div>
+          <div class="d-grid gap-2">
+            <button type="submit" name="decision" value="aprobado"
+                    class="btn btn-success"
+                    {% if comp.cfdi_duplicado %}
+                    onclick="return confirm('Este CFDI fue detectado como duplicado. ¿Confirmas aprobar?')"
+                    {% endif %}>
+              <i class="bi bi-check-circle"></i> Aprobar Comprobación
+            </button>
+            <button type="submit" name="decision" value="rechazado"
+                    class="btn btn-danger"
+                    onclick="return confirm('¿Rechazar esta comprobación?')">
+              <i class="bi bi-x-circle"></i> Rechazar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

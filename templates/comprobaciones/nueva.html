@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% block title %}Nueva Comprobación{% endblock %}
+{% block page_title %}<i class="bi bi-receipt-cutoff me-1"></i> Registrar Comprobación{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header">Datos del CFDI / Comprobante</div>
+      <div class="card-body">
+
+        <div class="alert alert-warning py-2">
+          <i class="bi bi-shield-exclamation"></i>
+          <strong>Verificación automática:</strong> El sistema detectará si el
+          UUID ya fue registrado por ti o por cualquier otra área.
+          Los CFDIs duplicados quedan bloqueados para autorización.
+        </div>
+
+        <form method="post" enctype="multipart/form-data">
+          <div class="row g-3">
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Tipo de comprobación *</label>
+              <select name="tipo" class="form-select" required>
+                {% for t in tipos %}
+                <option value="{{ t }}">{{ t.replace('_',' ').title() }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">
+                <i class="bi bi-file-code"></i> XML del CFDI
+              </label>
+              <input type="file" name="xml_cfdi" class="form-control"
+                     accept=".xml" onchange="parsearXml(this)">
+              <div class="form-text">
+                Carga el XML para llenar datos automáticamente.
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">UUID / Folio Fiscal</label>
+              <input type="text" name="cfdi_uuid" id="g_uuid"
+                     class="form-control font-monospace"
+                     placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">RFC Emisor</label>
+              <input type="text" name="rfc_emisor" id="g_rfc_e"
+                     class="form-control text-uppercase"
+                     placeholder="RFC del establecimiento">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Nombre Emisor</label>
+              <input type="text" name="nombre_emisor" id="g_nombre_e"
+                     class="form-control" placeholder="Razón social">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Subtotal</label>
+              <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="number" name="subtotal" id="g_sub"
+                       class="form-control" step="0.01">
+              </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">IVA</label>
+              <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="number" name="iva" id="g_iva"
+                       class="form-control" step="0.01">
+              </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Total *</label>
+              <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="number" name="total" id="g_total"
+                       class="form-control" step="0.01" required>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Concepto</label>
+              <input type="text" name="concepto" id="g_concepto"
+                     class="form-control"
+                     placeholder="Descripción del gasto">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Notas / Justificación</label>
+              <textarea name="notas" class="form-control" rows="2"
+                        placeholder="¿A qué proyecto o actividad corresponde este gasto?"></textarea>
+            </div>
+          </div>
+
+          <hr class="my-4">
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{{ url_for('comprobaciones_index') }}"
+               class="btn btn-outline-secondary">Cancelar</a>
+            <button type="submit" class="btn btn-success fw-semibold">
+              <i class="bi bi-cloud-upload"></i> Registrar Comprobación
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function parsearXml(input) {
+  if (!input.files.length) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const doc = (new DOMParser()).parseFromString(e.target.result,'text/xml');
+      const ns33 = 'http://www.sat.gob.mx/cfd/3';
+      const ns40 = 'http://www.sat.gob.mx/cfd/4';
+      const nsTfd= 'http://www.sat.gob.mx/TimbreFiscalDigital';
+      const cfdi = doc.documentElement;
+      const ns   = cfdi.namespaceURI;
+
+      const emisor = cfdi.getElementsByTagNameNS(ns40,'Emisor')[0]
+                  || cfdi.getElementsByTagNameNS(ns33,'Emisor')[0];
+
+      const tfds = doc.getElementsByTagNameNS(nsTfd,'TimbreFiscalDigital');
+      if (tfds.length) document.getElementById('g_uuid').value = tfds[0].getAttribute('UUID')||'';
+      if (emisor) {
+        document.getElementById('g_rfc_e').value    = emisor.getAttribute('Rfc')||'';
+        document.getElementById('g_nombre_e').value = emisor.getAttribute('Nombre')||'';
+      }
+      const sub = parseFloat(cfdi.getAttribute('SubTotal')||0);
+      const tot = parseFloat(cfdi.getAttribute('Total')||0);
+      document.getElementById('g_sub').value   = sub.toFixed(2);
+      document.getElementById('g_total').value = tot.toFixed(2);
+      document.getElementById('g_iva').value   = (tot-sub).toFixed(2);
+
+      const concs = cfdi.getElementsByTagNameNS(ns,'Concepto');
+      if (concs.length) {
+        document.getElementById('g_concepto').value =
+          Array.from(concs).slice(0,3)
+            .map(c=>c.getAttribute('Descripcion')).filter(Boolean).join('; ');
+      }
+    } catch(err) { console.error(err); }
+  };
+  reader.readAsText(input.files[0]);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,231 @@
+{% extends 'base.html' %}
+{% block title %}Nueva Solicitud de Pago{% endblock %}
+{% block page_title %}<i class="bi bi-file-earmark-plus me-1"></i> Nueva Solicitud de Pago{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <div class="card">
+      <div class="card-header">
+        Datos del CFDI y Solicitud de Transferencia
+      </div>
+      <div class="card-body">
+
+        <!-- Info box -->
+        <div class="alert alert-info py-2">
+          <i class="bi bi-info-circle"></i>
+          <strong>Importante:</strong> Sube el XML del CFDI para que el sistema
+          extraiga los datos automáticamente y verifique su estado ante el SAT.
+          Si no tienes el XML, llena los campos manualmente.
+        </div>
+
+        <form method="post" enctype="multipart/form-data" id="formPago">
+          <div class="row g-3">
+
+            <!-- XML upload -->
+            <div class="col-12">
+              <label class="form-label fw-semibold">
+                <i class="bi bi-file-code"></i> Archivo XML del CFDI
+              </label>
+              <input type="file" name="xml_cfdi" id="xmlInput"
+                     class="form-control" accept=".xml"
+                     onchange="previewXml(this)">
+              <div class="form-text">
+                Al seleccionar el XML los datos se llenarán automáticamente.
+              </div>
+            </div>
+
+            <!-- Datos extraídos / manuales del CFDI -->
+            <div class="col-12">
+              <h6 class="fw-semibold text-muted border-bottom pb-1 mt-2">
+                Datos del CFDI
+              </h6>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">UUID / Folio Fiscal</label>
+              <input type="text" name="cfdi_uuid" id="f_uuid"
+                     class="form-control font-monospace"
+                     placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">RFC Emisor</label>
+              <input type="text" name="rfc_emisor" id="f_rfc_e"
+                     class="form-control text-uppercase"
+                     placeholder="ABC010101AAA">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">RFC Receptor</label>
+              <input type="text" name="rfc_receptor" id="f_rfc_r"
+                     class="form-control text-uppercase"
+                     placeholder="DML123456XX0">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Subtotal</label>
+              <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="number" name="subtotal" id="f_subtotal"
+                       class="form-control" step="0.01" placeholder="0.00">
+              </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">IVA</label>
+              <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="number" name="iva" id="f_iva"
+                       class="form-control" step="0.01" placeholder="0.00">
+              </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Total *</label>
+              <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="number" name="total" id="f_total"
+                       class="form-control" step="0.01" placeholder="0.00">
+              </div>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Forma de Pago</label>
+              <input type="text" name="forma_pago" id="f_fp"
+                     class="form-control" placeholder="03 = Transferencia">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Método de Pago</label>
+              <input type="text" name="metodo_pago" id="f_mp"
+                     class="form-control" placeholder="PUE / PPD">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Concepto (descripción)</label>
+              <input type="text" name="concepto" id="f_concepto"
+                     class="form-control" placeholder="Descripción del servicio/bien">
+            </div>
+
+            <!-- Proveedor del catálogo -->
+            <div class="col-12">
+              <h6 class="fw-semibold text-muted border-bottom pb-1 mt-2">
+                Proveedor (para datos bancarios)
+              </h6>
+            </div>
+
+            <div class="col-md-8">
+              <label class="form-label fw-semibold">Proveedor del catálogo</label>
+              <select name="proveedor_id" class="form-select" id="selProv"
+                      onchange="llenarDatosBancarios(this)">
+                <option value="">— Seleccionar proveedor (opcional) —</option>
+                {% for p in proveedores %}
+                <option value="{{ p.id }}"
+                        data-clabe="{{ p.clabe }}"
+                        data-banco="{{ p.banco }}"
+                        data-rfc="{{ p.rfc }}">
+                  {{ p.nombre }} — RFC: {{ p.rfc }}
+                </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">
+                Si el proveedor no aparece,
+                <a href="{{ url_for('proveedores_nuevo') }}" target="_blank">agrégalo al catálogo</a>
+                primero.
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">CLABE Interbancaria</label>
+              <input type="text" class="form-control font-monospace" id="infoCLABE"
+                     readonly placeholder="—">
+            </div>
+
+            <!-- Notas -->
+            <div class="col-12">
+              <label class="form-label fw-semibold">Notas del solicitante</label>
+              <textarea name="notas" class="form-control" rows="2"
+                        placeholder="Información adicional para quien autorice..."></textarea>
+            </div>
+          </div>
+
+          <hr class="my-4">
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{{ url_for('pagos_index') }}" class="btn btn-outline-secondary">
+              Cancelar
+            </a>
+            <button type="submit" class="btn btn-primary fw-semibold">
+              <i class="bi bi-send"></i> Enviar Solicitud
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function llenarDatosBancarios(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById('infoCLABE').value = opt.dataset.clabe || '';
+  if (opt.dataset.rfc && !document.getElementById('f_rfc_e').value) {
+    document.getElementById('f_rfc_e').value = opt.dataset.rfc;
+  }
+}
+
+function previewXml(input) {
+  if (!input.files.length) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(e.target.result, 'text/xml');
+
+      const ns33 = 'http://www.sat.gob.mx/cfd/3';
+      const ns40 = 'http://www.sat.gob.mx/cfd/4';
+      const nsTfd = 'http://www.sat.gob.mx/TimbreFiscalDigital';
+
+      const cfdi = doc.documentElement;
+      const emisor  = cfdi.getElementsByTagNameNS(ns40, 'Emisor')[0]
+                   || cfdi.getElementsByTagNameNS(ns33, 'Emisor')[0];
+      const receptor= cfdi.getElementsByTagNameNS(ns40, 'Receptor')[0]
+                   || cfdi.getElementsByTagNameNS(ns33, 'Receptor')[0];
+
+      // UUID
+      const tfdList = doc.getElementsByTagNameNS(nsTfd, 'TimbreFiscalDigital');
+      if (tfdList.length) {
+        document.getElementById('f_uuid').value = tfdList[0].getAttribute('UUID') || '';
+      }
+
+      if (emisor)  {
+        document.getElementById('f_rfc_e').value = emisor.getAttribute('Rfc') || '';
+      }
+      if (receptor) {
+        document.getElementById('f_rfc_r').value = receptor.getAttribute('Rfc') || '';
+      }
+
+      document.getElementById('f_subtotal').value = cfdi.getAttribute('SubTotal') || '';
+      document.getElementById('f_total').value    = cfdi.getAttribute('Total') || '';
+      document.getElementById('f_fp').value       = cfdi.getAttribute('FormaPago') || '';
+      document.getElementById('f_mp').value       = cfdi.getAttribute('MetodoPago') || '';
+
+      // IVA
+      const sub = parseFloat(cfdi.getAttribute('SubTotal') || 0);
+      const tot = parseFloat(cfdi.getAttribute('Total') || 0);
+      document.getElementById('f_iva').value = (tot - sub).toFixed(2);
+
+      // Conceptos
+      const ns = cfdi.namespaceURI;
+      const concs = cfdi.getElementsByTagNameNS(ns, 'Concepto');
+      if (concs.length) {
+        const descs = Array.from(concs).slice(0,3)
+          .map(c => c.getAttribute('Descripcion')).filter(Boolean);
+        document.getElementById('f_concepto').value = descs.join('; ');
+      }
+
+      alert('✓ Datos del CFDI cargados. Verifica antes de enviar.');
+    } catch(err) {
+      console.error(err);
+    }
+  };
+  reader.readAsText(input.files[0]);
+}
+</script>
+{% endblock %}

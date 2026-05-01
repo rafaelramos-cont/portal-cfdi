@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Editar' if prov else 'Nuevo' }} Proveedor{% endblock %}
+{% block page_title %}
+  <i class="bi bi-building me-1"></i>
+  {{ 'Editar Proveedor' if prov else 'Nuevo Proveedor' }}
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('proveedores_index') }}" class="btn btn-sm btn-outline-secondary">
+  <i class="bi bi-arrow-left"></i> Volver
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header">Datos del Proveedor</div>
+      <div class="card-body">
+        <form method="post">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label fw-semibold">Nombre / Razón Social *</label>
+              <input type="text" name="nombre" class="form-control"
+                     value="{{ prov.nombre if prov else '' }}"
+                     placeholder="Nombre completo o razón social" required>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label fw-semibold">RFC *</label>
+              <input type="text" name="rfc" class="form-control text-uppercase"
+                     value="{{ prov.rfc if prov else '' }}"
+                     placeholder="ABC010101XXX" maxlength="13" required>
+              <div class="form-text">13 caracteres (persona moral) o 12 (física)</div>
+            </div>
+            <div class="col-md-7">
+              <label class="form-label fw-semibold">Banco</label>
+              <input type="text" name="banco" class="form-control"
+                     value="{{ prov.banco if prov else '' }}"
+                     placeholder="BBVA, Banorte, HSBC...">
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">CLABE Interbancaria (18 dígitos)</label>
+              <input type="text" name="clabe" class="form-control font-monospace"
+                     value="{{ prov.clabe if prov else '' }}"
+                     placeholder="000000000000000000"
+                     maxlength="18" pattern="[0-9]{18}">
+            </div>
+            <div class="col-md-7">
+              <label class="form-label fw-semibold">Correo electrónico</label>
+              <input type="email" name="email" class="form-control"
+                     value="{{ prov.email if prov else '' }}"
+                     placeholder="contacto@proveedor.com">
+            </div>
+            <div class="col-md-5">
+              <label class="form-label fw-semibold">Teléfono</label>
+              <input type="text" name="telefono" class="form-control"
+                     value="{{ prov.telefono if prov else '' }}"
+                     placeholder="612 000 0000">
+            </div>
+            {% if prov %}
+            <div class="col-12">
+              <div class="form-check">
+                <input type="checkbox" name="activo" class="form-check-input"
+                       id="chkActivo" {{ 'checked' if prov.activo else '' }}>
+                <label class="form-check-label" for="chkActivo">
+                  Proveedor activo
+                </label>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+          <hr class="my-4">
+          <div class="d-flex gap-2 justify-content-end">
+            <a href="{{ url_for('proveedores_index') }}"
+               class="btn btn-outline-secondary">Cancelar</a>
+            <button type="submit" class="btn btn-secondary fw-semibold">
+              <i class="bi bi-save"></i>
+              {{ 'Guardar Cambios' if prov else 'Agregar Proveedor' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

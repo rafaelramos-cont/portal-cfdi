@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+{% block title %}{{ sc.folio }}{% endblock %}
+{% block page_title %}Solicitud {{ sc.folio }}{% endblock %}
+
+{% block topbar_actions %}
+<a href="{{ url_for('compras_index') }}" class="btn btn-sm btn-outline-secondary">
+  <i class="bi bi-arrow-left"></i> Volver
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span>Detalles de la Solicitud</span>
+        <span class="badge bg-{{ ESTADO_BADGE.get(sc.estado,'secondary') }} fs-6">
+          {{ sc.estado.replace('_',' ').title() }}
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="text-muted small">Folio</label>
+            <div class="fw-bold font-monospace">{{ sc.folio }}</div>
+          </div>
+          <div class="col-md-4">
+            <label class="text-muted small">Fecha</label>
+            <div>{{ sc.fecha | fmtdate }}</div>
+          </div>
+          <div class="col-md-4">
+            <label class="text-muted small">Área</label>
+            <div>{{ sc.area }}</div>
+          </div>
+          <div class="col-md-4">
+            <label class="text-muted small">Solicitante</label>
+            <div>{{ sc.solicitante.nombre }}</div>
+          </div>
+          <div class="col-md-4">
+            <label class="text-muted small">Monto Estimado</label>
+            <div class="fw-bold fs-5">{{ sc.monto_estimado | mxn }}</div>
+          </div>
+          <div class="col-md-4">
+            <label class="text-muted small">Proveedor Sugerido</label>
+            <div>{{ sc.proveedor_sugerido or '—' }}</div>
+          </div>
+          <div class="col-12">
+            <label class="text-muted small">Descripción</label>
+            <div class="border rounded p-2 bg-light">{{ sc.descripcion }}</div>
+          </div>
+          {% if sc.justificacion %}
+          <div class="col-12">
+            <label class="text-muted small">Justificación</label>
+            <div class="border rounded p-2 bg-light">{{ sc.justificacion }}</div>
+          </div>
+          {% endif %}
+          {% if sc.archivo_path %}
+          <div class="col-12">
+            <label class="text-muted small">Adjunto</label><br>
+            <span class="badge bg-secondary">
+              <i class="bi bi-paperclip"></i> Archivo adjunto cargado
+            </span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Historial de autorizaciones -->
+    {% if sc.autorizaciones %}
+    <div class="card">
+      <div class="card-header">Historial de Autorizaciones</div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead class="table-light">
+            <tr><th>Fecha</th><th>Autorizador</th><th>Rol</th>
+                <th>Decisión</th><th>Comentario</th></tr>
+          </thead>
+          <tbody>
+            {% for a in sc.autorizaciones %}
+            <tr>
+              <td>{{ a.fecha | fmtdate }}</td>
+              <td>{{ a.autorizador.nombre }}</td>
+              <td><span class="badge bg-secondary">{{ a.autorizador.rol }}</span></td>
+              <td>
+                <span class="badge bg-{{ 'success' if a.decision=='aprobado' else 'danger' }}">
+                  {{ a.decision }}
+                </span>
+              </td>
+              <td>{{ a.comentario or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Panel de autorización -->
+  {% if current_user.puede('autorizar_compra') and
+       sc.estado in ['enviada','aprobada_supervisor'] %}
+  <div class="col-lg-4">
+    <div class="card border-primary">
+      <div class="card-header bg-primary text-white">
+        <i class="bi bi-shield-check"></i> Autorización
+      </div>
+      <div class="card-body">
+        <p class="text-muted small mb-3">
+          Revisa la solicitud y emite tu decisión.
+          {% if sc.estado == 'aprobada_supervisor' %}
+          <strong>Ya cuenta con aprobación de supervisor.</strong>
+          {% endif %}
+        </p>
+        <form method="post" action="{{ url_for('compras_autorizar', id=sc.id) }}">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Comentario (opcional)</label>
+            <textarea name="comentario" class="form-control" rows="3"
+                      placeholder="Observaciones o condiciones..."></textarea>
+          </div>
+          <div class="d-grid gap-2">
+            <button type="submit" name="decision" value="aprobado"
+                    class="btn btn-success">
+              <i class="bi bi-check-circle"></i> Aprobar
+            </button>
+            <button type="submit" name="decision" value="rechazado"
+                    class="btn btn-danger"
+                    onclick="return confirm('¿Confirmas rechazar esta solicitud?')">
+              <i class="bi bi-x-circle"></i> Rechazar
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
