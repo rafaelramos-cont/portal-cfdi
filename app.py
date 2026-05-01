@@ -861,7 +861,29 @@ def api_cfdi_verificar():
 
 
 # ─────────────────────── INIT & RUN ───────────────────────────
-def init_db():
+
+@app.route('/setup-db')
+def setup_db_route():
+    try:
+        db.create_all()
+        try:
+            admin_existe = Usuario.query.first() is not None
+        except Exception:
+            admin_existe = False
+        if not admin_existe:
+            admin = Usuario(nombre='Administrador', email='admin@dif.gob.mx',
+                            rol='admin', area='Administración')
+            admin.set_password('Admin2025!')
+            db.session.add(admin)
+            db.session.commit()
+            msg = '✅ Tablas creadas y admin generado. Correo: admin@dif.gob.mx | Contraseña: Admin2025!'
+        else:
+            msg = '✅ Tablas ya existían. Base de datos lista.'
+        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        db_tipo = 'PostgreSQL' if 'postgresql' in db_uri else 'SQLite'
+        return f'<h2>{msg}</h2><p>Base de datos: <b>{db_tipo}</b></p><p><a href="/">Ir al portal</a></p>'
+    except Exception as e:
+        return f'<h2>❌ Error: {str(e)}</h2>', 500def init_db():
     with app.app_context():
         db.create_all()
         if not Usuario.query.first():
