@@ -883,7 +883,9 @@ def setup_db_route():
         db_tipo = 'PostgreSQL' if 'postgresql' in db_uri else 'SQLite'
         return f'<h2>{msg}</h2><p>Base de datos: <b>{db_tipo}</b></p><p><a href="/">Ir al portal</a></p>'
     except Exception as e:
-        return f'<h2>❌ Error: {str(e)}</h2>', 500def init_db():
+        return f'<h2>❌ Error: {str(e)}</h2>', 500
+
+def init_db():
     with app.app_context():
         db.create_all()
         if not Usuario.query.first():
