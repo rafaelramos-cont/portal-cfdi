@@ -9,9 +9,12 @@ from flask_login import (LoginManager, UserMixin, login_user,
                          logout_user, login_required, current_user)
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 import os, uuid as uuid_lib, xml.etree.ElementTree as ET, requests as req_lib
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # ─────────────────────── APP CONFIG ───────────────────────────
 app = Flask(__name__)
@@ -32,6 +35,34 @@ login_manager.login_message = 'Inicia sesión para continuar.'
 login_manager.login_message_category = 'warning'
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# ─────────────────────── CORREO ───────────────────────────────
+MAIL_SERVER   = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
+MAIL_PORT     = int(os.environ.get('MAIL_PORT', '587'))
+MAIL_USERNAME = os.environ.get('MAIL_USERNAME', '')
+MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD', '')
+MAIL_FROM     = os.environ.get('MAIL_FROM', MAIL_USERNAME)
+PORTAL_DOMAIN = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'web-production-8e3f9.up.railway.app')
+
+def enviar_correo(destinatario, asunto, cuerpo_html):
+    """Envía correo. Silencia errores para no bloquear el flujo."""
+    if not MAIL_USERNAME or not MAIL_PASSWORD or not destinatario:
+        return
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = f'[Portal CFDI DIF] {asunto}'
+        msg['From']    = f'Portal CFDI DIF <{MAIL_FROM}>'
+        msg['To']      = destinatario
+        footer = ('<br><hr style="margin-top:30px">'
+                  '<small style="color:#888">Portal CFDI — DIF Municipal La Paz BCS</small>')
+        msg.attach(MIMEText(cuerpo_html + footer, 'html', 'utf-8'))
+        with smtplib.SMTP(MAIL_SERVER, MAIL_PORT, timeout=10) as s:
+            s.starttls()
+            s.login(MAIL_USERNAME, MAIL_PASSWORD)
+            s.sendmail(MAIL_FROM, [destinatario], msg.as_string())
+        print(f'✉ Correo enviado a {destinatario}: {asunto}')
+    except Exception as e:
+        print(f'⚠ Correo no enviado a {destinatario}: {e}')
 
 # ─────────────────────── CATÁLOGOS ────────────────────────────
 ROLES  = ['solicitante', 'supervisor', 'director', 'tesoreria', 'admin']
@@ -146,9 +177,18 @@ class SolicitudPago(db.Model):
     # Workflow
     estado              = db.Column(db.String(50), default='pendiente')
     notas_solicitante   = db.Column(db.Text)
+    # Enlace con solicitud de compra origen
+    compra_origen_id    = db.Column(db.Integer, db.ForeignKey('solicitudes_compra.id'), nullable=True)
+    # XML pendiente (compromiso 3 días)
+    xml_comprometido    = db.Column(db.Boolean, default=False)
+    xml_fecha_limite    = db.Column(db.DateTime, nullable=True)
+    # Comprobante de pago (PDF que sube tesorería)
+    comprobante_pago_pdf= db.Column(db.String(500))
+    fecha_pago          = db.Column(db.DateTime, nullable=True)
 
-    solicitante   = db.relationship('Usuario', foreign_keys=[solicitante_id])
-    proveedor     = db.relationship('Proveedor')
+    solicitante    = db.relationship('Usuario', foreign_keys=[solicitante_id])
+    proveedor      = db.relationship('Proveedor')
+    compra_origen  = db.relationship('SolicitudCompra', foreign_keys=[compra_origen_id])
     autorizaciones= db.relationship(
         'Autorizacion',
         primaryjoin="and_(Autorizacion.tipo_solicitud=='pago', "
@@ -370,8 +410,8 @@ def cfdi_ya_existe(uuid, excluir_pago_id=None, excluir_comp_id=None):
 
 def _autorizar(tipo, model, id_val, url_detalle):
     """Lógica compartida de autorización."""
-    obj      = model.query.get_or_404(id_val)
-    decision = request.form.get('decision')
+    obj        = model.query.get_or_404(id_val)
+    decision   = request.form.get('decision')
     comentario = request.form.get('comentario', '')
 
     nivel_map = {'supervisor': 1, 'director': 2, 'tesoreria': 3, 'admin': 3}
@@ -396,17 +436,67 @@ def _autorizar(tipo, model, id_val, url_detalle):
     elif decision == 'aprobado':
         if tipo == 'pago' and nivel >= 2:
             obj.estado = 'autorizado_pago'
+            obj.fecha_pago = datetime.utcnow()
         elif nivel == 1:
             obj.estado = 'aprobada_supervisor'
         else:
             obj.estado = 'aprobada'
 
     db.session.commit()
+    _notificar(tipo, obj, decision, nivel, comentario)
+
     flash(
         f'Solicitud {"autorizada para pago" if obj.estado == "autorizado_pago" else obj.estado}.',
         'success' if decision == 'aprobado' else 'danger'
     )
     return redirect(url_detalle)
+
+
+def _notificar(tipo, obj, decision, nivel, comentario):
+    """Envía correo de notificación al solicitante según evento."""
+    try:
+        url_base = f'https://{PORTAL_DOMAIN}'
+        solicitante = obj.solicitante
+        nota = f'<p><em>Comentario: {comentario}</em></p>' if comentario else ''
+
+        if tipo == 'compra':
+            url = f'{url_base}/compras/{obj.id}'
+            btn = f'<a href="{url}" style="background:#0d6efd;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;">Ver solicitud</a>'
+            if decision == 'aprobado' and nivel >= 2:
+                enviar_correo(solicitante.email,
+                    f'✅ Compra {obj.folio} aprobada — ya puedes solicitar el pago',
+                    f'<h2>Tu solicitud de compra fue aprobada</h2>'
+                    f'<p>La solicitud <strong>{obj.folio}</strong> fue aprobada por Dirección.</p>'
+                    f'<p><strong>Monto estimado:</strong> ${obj.monto_estimado:,.2f}</p>'
+                    f'<p>Cuando cuentes con el CFDI del proveedor, registra la '
+                    f'<strong>Solicitud de Pago</strong> desde el portal.</p>'
+                    f'{nota}<br>{btn}')
+            elif decision == 'rechazado':
+                enviar_correo(solicitante.email,
+                    f'❌ Compra {obj.folio} rechazada',
+                    f'<h2>Tu solicitud de compra fue rechazada</h2>'
+                    f'<p>La solicitud <strong>{obj.folio}</strong> no fue autorizada.</p>'
+                    f'{nota}<br>{btn}')
+
+        elif tipo == 'pago':
+            url = f'{url_base}/pagos/{obj.id}'
+            btn = f'<a href="{url}" style="background:#198754;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;">Ver solicitud</a>'
+            if decision == 'aprobado' and nivel >= 3:
+                enviar_correo(solicitante.email,
+                    f'💳 Pago autorizado — {obj.folio}',
+                    f'<h2>Tu solicitud de pago fue autorizada</h2>'
+                    f'<p>La solicitud <strong>{obj.folio}</strong> fue autorizada para pago por Tesorería.</p>'
+                    f'<p><strong>Total:</strong> ${obj.total:,.2f} | <strong>Emisor:</strong> {obj.nombre_emisor or "—"}</p>'
+                    f'<p>Recibirás el comprobante de pago cuando Tesorería lo adjunte en el sistema.</p>'
+                    f'{nota}<br>{btn}')
+            elif decision == 'rechazado':
+                enviar_correo(solicitante.email,
+                    f'❌ Pago {obj.folio} rechazado',
+                    f'<h2>Tu solicitud de pago fue rechazada</h2>'
+                    f'<p>La solicitud <strong>{obj.folio}</strong> no fue autorizada.</p>'
+                    f'{nota}<br>{btn}')
+    except Exception as e:
+        print(f'⚠ Error en notificación: {e}')
 
 
 # ─────────────────────── JINJA FILTERS ────────────────────────
@@ -426,6 +516,7 @@ def fmt_date(v):
     return v.strftime('%d/%m/%Y')
 
 app.jinja_env.globals['ESTADO_BADGE'] = ESTADO_BADGE
+app.jinja_env.globals['now'] = datetime.utcnow
 
 # ─────────────────────── AUTH ─────────────────────────────────
 @app.route('/login', methods=['GET', 'POST'])
@@ -555,8 +646,12 @@ def pagos_index():
 @app.route('/pagos/nueva', methods=['GET', 'POST'])
 @login_required
 def pagos_nueva():
-    proveedores = Proveedor.query.filter_by(activo=True).order_by(Proveedor.nombre).all()
+    proveedores  = Proveedor.query.filter_by(activo=True).order_by(Proveedor.nombre).all()
+    compra_id    = request.args.get('compra_id', type=int)
+    compra_origen = SolicitudCompra.query.get(compra_id) if compra_id else None
+
     if request.method == 'POST':
+        xml_comprometido = 'xml_comprometido' in request.form
         xml_path   = None
         datos_cfdi = {}
         xml_file   = request.files.get('xml_cfdi')
@@ -565,10 +660,16 @@ def pagos_nueva():
             if xml_path:
                 datos_cfdi = parsear_cfdi_xml(xml_path) or {}
 
+        # Si no hay XML y no marcó compromiso, rechazar
+        if not xml_path and not xml_comprometido:
+            flash('Debes adjuntar el XML del CFDI o marcar el compromiso de entregarlo en 3 días.', 'danger')
+            return render_template('pagos/nueva.html', proveedores=proveedores,
+                                   compra_origen=compra_origen)
+
         uuid       = datos_cfdi.get('uuid') or request.form.get('cfdi_uuid', '')
         total      = datos_cfdi.get('total') or float(request.form.get('total') or 0)
-        rfc_emisor = datos_cfdi.get('rfc_emisor', '')
-        rfc_rec    = datos_cfdi.get('rfc_receptor', '')
+        rfc_emisor = datos_cfdi.get('rfc_emisor', '') or request.form.get('rfc_emisor', '')
+        rfc_rec    = datos_cfdi.get('rfc_receptor', '') or request.form.get('rfc_receptor', '')
 
         duplicado  = bool(cfdi_ya_existe(uuid)) if uuid else False
         estado_sat = 'Sin verificar'
@@ -576,32 +677,41 @@ def pagos_nueva():
             res        = validar_cfdi_sat(uuid, rfc_emisor, rfc_rec, total)
             estado_sat = res.get('estado', 'Error')
 
+        fecha_limite = datetime.utcnow() + timedelta(days=3) if xml_comprometido else None
+
         sp = SolicitudPago(
-            folio          = generar_folio('SP', SolicitudPago),
-            solicitante_id = current_user.id,
-            proveedor_id   = request.form.get('proveedor_id') or None,
-            cfdi_uuid      = uuid,
-            cfdi_xml_path  = xml_path,
-            rfc_emisor     = rfc_emisor,
-            nombre_emisor  = datos_cfdi.get('nombre_emisor', ''),
-            rfc_receptor   = rfc_rec,
-            subtotal       = datos_cfdi.get('subtotal', 0),
-            iva            = datos_cfdi.get('iva', 0),
-            total          = total,
-            forma_pago     = datos_cfdi.get('forma_pago', ''),
-            metodo_pago    = datos_cfdi.get('metodo_pago', ''),
-            uso_cfdi       = datos_cfdi.get('uso_cfdi', ''),
-            fecha_cfdi     = datos_cfdi.get('fecha_cfdi'),
-            concepto       = datos_cfdi.get('concepto') or request.form.get('concepto', ''),
-            estado_sat     = estado_sat,
-            cfdi_duplicado = duplicado,
-            estado         = 'pendiente',
-            notas_solicitante = request.form.get('notas', '')
+            folio             = generar_folio('SP', SolicitudPago),
+            solicitante_id    = current_user.id,
+            proveedor_id      = request.form.get('proveedor_id') or None,
+            compra_origen_id  = request.form.get('compra_origen_id') or None,
+            cfdi_uuid         = uuid,
+            cfdi_xml_path     = xml_path,
+            rfc_emisor        = rfc_emisor,
+            nombre_emisor     = datos_cfdi.get('nombre_emisor', ''),
+            rfc_receptor      = rfc_rec,
+            subtotal          = datos_cfdi.get('subtotal', 0),
+            iva               = datos_cfdi.get('iva', 0),
+            total             = total,
+            forma_pago        = datos_cfdi.get('forma_pago', ''),
+            metodo_pago       = datos_cfdi.get('metodo_pago', ''),
+            uso_cfdi          = datos_cfdi.get('uso_cfdi', ''),
+            fecha_cfdi        = datos_cfdi.get('fecha_cfdi'),
+            concepto          = datos_cfdi.get('concepto') or request.form.get('concepto', ''),
+            estado_sat        = estado_sat,
+            cfdi_duplicado    = duplicado,
+            estado            = 'pendiente',
+            notas_solicitante = request.form.get('notas', ''),
+            xml_comprometido  = xml_comprometido,
+            xml_fecha_limite  = fecha_limite
         )
         db.session.add(sp)
         db.session.commit()
 
-        if duplicado:
+        if xml_comprometido:
+            flash(f'Solicitud {sp.folio} creada con compromiso de XML. '
+                  f'Tienes hasta el {fecha_limite.strftime("%d/%m/%Y")} para subir el XML. '
+                  f'Si no lo haces, deberás reintegrar el recurso.', 'warning')
+        elif duplicado:
             flash(f'⚠️ ALERTA: El CFDI {uuid[:8]}… ya existe en el sistema '
                   f'(posible duplicado). La solicitud quedó en estado pendiente.', 'danger')
         elif estado_sat == 'Cancelado':
@@ -613,7 +723,8 @@ def pagos_nueva():
             flash(f'Solicitud {sp.folio} creada. Estado SAT: {estado_sat}.', 'info')
         return redirect(url_for('pagos_detalle', id=sp.id))
 
-    return render_template('pagos/nueva.html', proveedores=proveedores)
+    return render_template('pagos/nueva.html', proveedores=proveedores,
+                           compra_origen=compra_origen)
 
 
 @app.route('/pagos/<int:id>')
@@ -628,6 +739,72 @@ def pagos_detalle(id):
 def pagos_autorizar(id):
     return _autorizar('pago', SolicitudPago, id,
                       url_for('pagos_detalle', id=id))
+
+
+@app.route('/pagos/<int:id>/subir-xml', methods=['POST'])
+@login_required
+def pagos_subir_xml(id):
+    sp = SolicitudPago.query.get_or_404(id)
+    if sp.solicitante_id != current_user.id and current_user.rol != 'admin':
+        flash('Solo el solicitante puede subir el XML.', 'danger')
+        return redirect(url_for('pagos_detalle', id=id))
+    xml_file = request.files.get('xml_cfdi')
+    if xml_file and xml_file.filename:
+        xml_path = save_upload(xml_file, 'pagos')
+        if xml_path:
+            datos = parsear_cfdi_xml(xml_path) or {}
+            uuid = datos.get('uuid') or sp.cfdi_uuid
+            duplicado = bool(cfdi_ya_existe(uuid, excluir_pago_id=id)) if uuid else False
+            if uuid and datos.get('rfc_emisor') and datos.get('rfc_receptor') and datos.get('total'):
+                res = validar_cfdi_sat(uuid, datos['rfc_emisor'], datos['rfc_receptor'], datos['total'])
+                sp.estado_sat = res.get('estado', 'Error')
+            sp.cfdi_xml_path = xml_path
+            sp.cfdi_uuid     = uuid or sp.cfdi_uuid
+            sp.rfc_emisor    = datos.get('rfc_emisor', sp.rfc_emisor)
+            sp.nombre_emisor = datos.get('nombre_emisor', sp.nombre_emisor)
+            sp.rfc_receptor  = datos.get('rfc_receptor', sp.rfc_receptor)
+            sp.subtotal      = datos.get('subtotal', sp.subtotal)
+            sp.iva           = datos.get('iva', sp.iva)
+            sp.total         = datos.get('total', sp.total)
+            sp.forma_pago    = datos.get('forma_pago', sp.forma_pago)
+            sp.metodo_pago   = datos.get('metodo_pago', sp.metodo_pago)
+            sp.uso_cfdi      = datos.get('uso_cfdi', sp.uso_cfdi)
+            sp.fecha_cfdi    = datos.get('fecha_cfdi', sp.fecha_cfdi)
+            sp.concepto      = datos.get('concepto', sp.concepto)
+            sp.cfdi_duplicado= duplicado
+            sp.xml_comprometido = False
+            db.session.commit()
+            flash('✅ XML subido y validado correctamente.', 'success')
+    else:
+        flash('No se seleccionó ningún archivo XML.', 'warning')
+    return redirect(url_for('pagos_detalle', id=id))
+
+
+@app.route('/pagos/<int:id>/subir-comprobante', methods=['POST'])
+@login_required
+@require_role('tesoreria', 'admin')
+def pagos_subir_comprobante(id):
+    sp = SolicitudPago.query.get_or_404(id)
+    pdf_file = request.files.get('comprobante_pdf')
+    if pdf_file and pdf_file.filename:
+        pdf_path = save_upload(pdf_file, 'comprobantes')
+        if pdf_path:
+            sp.comprobante_pago_pdf = pdf_path
+            db.session.commit()
+            # Notificar al solicitante
+            url = f'https://{PORTAL_DOMAIN}/pagos/{sp.id}'
+            btn = f'<a href="{url}" style="background:#0d6efd;color:#fff;padding:10px 20px;text-decoration:none;border-radius:5px;">Ver comprobante</a>'
+            enviar_correo(sp.solicitante.email,
+                f'📄 Comprobante de pago disponible — {sp.folio}',
+                f'<h2>El comprobante de pago está disponible</h2>'
+                f'<p>Tesorería adjuntó el comprobante de pago para la solicitud <strong>{sp.folio}</strong>.</p>'
+                f'<p><strong>Total pagado:</strong> ${sp.total:,.2f}</p>'
+                f'<p><strong>Proveedor/Emisor:</strong> {sp.nombre_emisor or "—"}</p>'
+                f'<br>{btn}')
+            flash('✅ Comprobante de pago adjunto. Se notificó al solicitante.', 'success')
+    else:
+        flash('No se seleccionó ningún archivo.', 'warning')
+    return redirect(url_for('pagos_detalle', id=id))
 
 
 @app.route('/pagos/<int:id>/reverificar', methods=['POST'])
@@ -860,31 +1037,40 @@ def api_cfdi_verificar():
                     'duplicado_en': duplicado})
 
 
-# ─────────────────────── INIT & RUN ───────────────────────────
-
+# ─────────────────────── SETUP ROUTE ─────────────────────────
 @app.route('/setup-db')
 def setup_db_route():
+    """Ruta de emergencia para crear tablas. Visitar una sola vez."""
     try:
         db.create_all()
+        admin_existe = False
         try:
             admin_existe = Usuario.query.first() is not None
         except Exception:
-            admin_existe = False
+            pass
+
         if not admin_existe:
-            admin = Usuario(nombre='Administrador', email='admin@dif.gob.mx',
-                            rol='admin', area='Administración')
+            admin = Usuario(
+                nombre='Administrador',
+                email ='admin@dif.gob.mx',
+                rol   ='admin',
+                area  ='Administración'
+            )
             admin.set_password('Admin2025!')
             db.session.add(admin)
             db.session.commit()
-            msg = '✅ Tablas creadas y admin generado. Correo: admin@dif.gob.mx | Contraseña: Admin2025!'
+            msg = '✅ Tablas creadas y usuario admin generado. Correo: admin@dif.gob.mx | Contraseña: Admin2025!'
         else:
             msg = '✅ Tablas ya existían. Base de datos lista.'
-        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+
+        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', 'desconocida')
         db_tipo = 'PostgreSQL' if 'postgresql' in db_uri else 'SQLite'
         return f'<h2>{msg}</h2><p>Base de datos: <b>{db_tipo}</b></p><p><a href="/">Ir al portal</a></p>'
     except Exception as e:
-        return f'<h2>❌ Error: {str(e)}</h2>', 500
+        return f'<h2>❌ Error: {str(e)}</h2><p>DATABASE_URL: {app.config.get("SQLALCHEMY_DATABASE_URI","no definida")}</p>', 500
 
+
+# ─────────────────────── INIT & RUN ───────────────────────────
 def init_db():
     with app.app_context():
         db.create_all()
@@ -899,10 +1085,44 @@ def init_db():
             db.session.add(admin)
             db.session.commit()
             print("✓ Admin creado → admin@dif.gob.mx  /  Admin2025!")
-            print("  ¡Cambia la contraseña después del primer inicio de sesión!")
 
+
+try:
+    init_db()
+except Exception as e:
+    print(f"⚠ init_db() falló al arrancar: {e}")
 
 if __name__ == '__main__':
-    init_db()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
+# ─────────────────────── MIGRACIÓN DB ────────────────────────
+@app.route('/migrar-db')
+def migrar_db():
+    """Agrega columnas nuevas a tablas existentes sin borrar datos."""
+    msgs = []
+    try:
+        conn = db.engine.connect()
+        migraciones = [
+            ("solicitudes_pago", "compra_origen_id",     "INTEGER"),
+            ("solicitudes_pago", "xml_comprometido",     "BOOLEAN DEFAULT FALSE"),
+            ("solicitudes_pago", "xml_fecha_limite",     "TIMESTAMP"),
+            ("solicitudes_pago", "comprobante_pago_pdf", "VARCHAR(500)"),
+            ("solicitudes_pago", "fecha_pago",           "TIMESTAMP"),
+        ]
+        from sqlalchemy import text
+        for tabla, columna, tipo in migraciones:
+            try:
+                conn.execute(text(
+                    f"ALTER TABLE {tabla} ADD COLUMN IF NOT EXISTS {columna} {tipo}"
+                ))
+                conn.commit()
+                msgs.append(f"✅ {tabla}.{columna}")
+            except Exception as e:
+                msgs.append(f"⚠ {tabla}.{columna}: {e}")
+        conn.close()
+        resultado = "<br>".join(msgs)
+        return (f"<h2>Migración completada</h2>{resultado}"
+                f"<br><br><a href='/'>Ir al portal</a>")
+    except Exception as e:
+        return f"<h2>Error: {e}</h2>", 500

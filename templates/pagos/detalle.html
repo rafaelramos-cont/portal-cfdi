@@ -10,6 +10,62 @@
 
 {% block content %}
 
+<!-- Alerta XML comprometido -->
+{% if sp.xml_comprometido and not sp.cfdi_xml_path %}
+  {% set dias_restantes = ((sp.xml_fecha_limite - now) if sp.xml_fecha_limite else none) %}
+  <div class="alert alert-warning d-flex align-items-start gap-2">
+    <i class="bi bi-clock-history fs-4 mt-1"></i>
+    <div class="w-100">
+      <strong>⏰ XML pendiente de entrega</strong><br>
+      Al crear esta solicitud te comprometiste a entregar el XML del CFDI en 3 días hábiles.
+      {% if sp.xml_fecha_limite %}
+        Fecha límite: <strong>{{ sp.xml_fecha_limite.strftime('%d/%m/%Y') }}</strong>.
+      {% endif %}
+      <br><small class="text-danger fw-semibold">
+        Si no entregas el XML, deberás reintegrar el recurso.
+      </small>
+      {% if sp.solicitante_id == current_user.id or current_user.rol == 'admin' %}
+      <form method="post" action="{{ url_for('pagos_subir_xml', id=sp.id) }}"
+            enctype="multipart/form-data" class="d-flex gap-2 mt-2">
+        <input type="file" name="xml_cfdi" accept=".xml" class="form-control form-control-sm" required>
+        <button type="submit" class="btn btn-sm btn-warning text-dark fw-semibold text-nowrap">
+          <i class="bi bi-upload"></i> Subir XML
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
+
+<!-- Comprobante de pago (tesorería) -->
+{% if sp.estado == 'autorizado_pago' and current_user.rol in ['tesoreria','admin'] and not sp.comprobante_pago_pdf %}
+<div class="alert alert-info d-flex align-items-start gap-2">
+  <i class="bi bi-file-earmark-pdf fs-4 mt-1"></i>
+  <div class="w-100">
+    <strong>Adjuntar comprobante de pago</strong><br>
+    Este pago está autorizado. Adjunta el comprobante en PDF para notificar al solicitante.
+    <form method="post" action="{{ url_for('pagos_subir_comprobante', id=sp.id) }}"
+          enctype="multipart/form-data" class="d-flex gap-2 mt-2">
+      <input type="file" name="comprobante_pdf" accept=".pdf" class="form-control form-control-sm" required>
+      <button type="submit" class="btn btn-sm btn-primary text-nowrap">
+        <i class="bi bi-upload"></i> Adjuntar PDF
+      </button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% if sp.comprobante_pago_pdf %}
+<div class="alert alert-success d-flex align-items-center gap-2">
+  <i class="bi bi-file-earmark-check-fill fs-4"></i>
+  <div>
+    <strong>Comprobante de pago adjunto</strong>
+    {% if sp.fecha_pago %} — Pagado el {{ sp.fecha_pago.strftime('%d/%m/%Y') }}{% endif %}
+    <br><small>El comprobante en PDF fue adjuntado por Tesorería.</small>
+  </div>
+</div>
+{% endif %}
+
 <!-- Alertas de CFDI problemático -->
 {% if sp.cfdi_duplicado %}
 <div class="alert alert-danger d-flex align-items-center gap-2">

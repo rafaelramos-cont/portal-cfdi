@@ -97,6 +97,27 @@
     {% endif %}
   </div>
 
+  <!-- Botón Solicitar Pago (cuando está aprobada) -->
+  {% if sc.estado == 'aprobada' %}
+  <div class="col-lg-4">
+    <div class="card border-success mb-3">
+      <div class="card-header bg-success text-white">
+        <i class="bi bi-check2-circle"></i> Compra Aprobada
+      </div>
+      <div class="card-body text-center">
+        <p class="text-muted small mb-3">
+          Esta solicitud fue aprobada. El siguiente paso es registrar la Solicitud de Pago
+          con el CFDI del proveedor.
+        </p>
+        <a href="{{ url_for('pagos_nueva', compra_id=sc.id) }}"
+           class="btn btn-success w-100">
+          <i class="bi bi-send-check"></i> Solicitar Pago
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Panel de autorización -->
   {% if current_user.puede('autorizar_compra') and
        sc.estado in ['enviada','aprobada_supervisor'] %}

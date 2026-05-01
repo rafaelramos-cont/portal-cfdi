@@ -11,15 +11,26 @@
       </div>
       <div class="card-body">
 
+        {% if compra_origen %}
+        <div class="alert alert-success py-2">
+          <i class="bi bi-link-45deg"></i>
+          <strong>Solicitud de Compra relacionada:</strong>
+          {{ compra_origen.folio }} — {{ compra_origen.descripcion[:80] }}
+          (Monto estimado: {{ compra_origen.monto_estimado | mxn }})
+        </div>
+        {% endif %}
+
         <!-- Info box -->
         <div class="alert alert-info py-2">
           <i class="bi bi-info-circle"></i>
-          <strong>Importante:</strong> Sube el XML del CFDI para que el sistema
-          extraiga los datos automáticamente y verifique su estado ante el SAT.
-          Si no tienes el XML, llena los campos manualmente.
+          <strong>Importante:</strong> Sube el XML del CFDI para verificación automática ante el SAT.
+          Si aún no cuentas con él, puedes comprometerte a entregarlo en <strong>3 días hábiles</strong>.
         </div>
 
         <form method="post" enctype="multipart/form-data" id="formPago">
+          {% if compra_origen %}
+          <input type="hidden" name="compra_origen_id" value="{{ compra_origen.id }}">
+          {% endif %}
           <div class="row g-3">
 
             <!-- XML upload -->
@@ -32,6 +43,30 @@
                      onchange="previewXml(this)">
               <div class="form-text">
                 Al seleccionar el XML los datos se llenarán automáticamente.
+              </div>
+            </div>
+
+            <!-- Compromiso XML -->
+            <div class="col-12" id="bloqueCompromiso">
+              <div class="border rounded p-3 bg-warning bg-opacity-10">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox"
+                         name="xml_comprometido" id="chkCompromiso"
+                         onchange="toggleCompromiso(this)">
+                  <label class="form-check-label fw-semibold text-warning-emphasis"
+                         for="chkCompromiso">
+                    No cuento con el XML ahora — me comprometo a entregarlo en 3 días hábiles
+                  </label>
+                </div>
+                <div id="textoCompromiso" class="mt-2 d-none">
+                  <div class="alert alert-warning py-2 mb-0">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <strong>Compromiso formal:</strong> Al marcar esta opción me comprometo a
+                    subir el XML del CFDI dentro de <strong>3 días hábiles</strong>.
+                    De no hacerlo en el plazo indicado, <strong>deberé reintegrar el recurso</strong>
+                    al DIF Municipal La Paz BCS.
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -162,6 +197,26 @@
 
 {% block scripts %}
 <script>
+function toggleCompromiso(chk) {
+  const txt = document.getElementById('textoCompromiso');
+  txt.classList.toggle('d-none', !chk.checked);
+  // Si hay XML, desmarcar compromiso automáticamente
+  if (chk.checked && document.getElementById('xmlInput').files.length) {
+    chk.checked = false;
+    txt.classList.add('d-none');
+    alert('Ya seleccionaste un XML. No es necesario marcar el compromiso.');
+  }
+}
+
+// Si sube XML, desmarcar compromiso
+document.getElementById('xmlInput').addEventListener('change', function() {
+  if (this.files.length) {
+    const chk = document.getElementById('chkCompromiso');
+    chk.checked = false;
+    document.getElementById('textoCompromiso').classList.add('d-none');
+  }
+});
+
 function llenarDatosBancarios(sel) {
   const opt = sel.options[sel.selectedIndex];
   document.getElementById('infoCLABE').value = opt.dataset.clabe || '';
